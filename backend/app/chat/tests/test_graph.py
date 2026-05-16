@@ -4,6 +4,203 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+# ── integration tests ─────────────────────────────────────────────────────────
+
+@pytest.mark.integration
+class TestGraphIntegration:
+    @pytest.fixture(autouse=True)
+    def infrastructure(self, monkeypatch):
+        from alembic import command
+        from alembic.config import Config
+        from testcontainers.core.container import DockerContainer
+        from testcontainers.postgres import PostgresContainer
+
+        import app.shared.chromadb as chromadb_module
+        from app.shared.config import get_settings
+        from app.shared.database import _get_engine, _get_session_factory
+        from conftest import wait_for_chroma
+
+        with PostgresContainer("postgres:16-alpine") as pg:
+            with DockerContainer("chromadb/chroma:latest").with_exposed_ports(8000) as chroma:
+                chroma_host = chroma.get_container_host_ip()
+                chroma_port = chroma.get_exposed_port(8000)
+                wait_for_chroma(chroma_host, chroma_port)
+
+                pg_url = pg.get_connection_url().replace("postgresql+psycopg2://", "postgresql+asyncpg://")
+                monkeypatch.setenv("POSTGRES_URL", pg_url)
+                monkeypatch.setenv("CHROMADB_HOST", chroma_host)
+                monkeypatch.setenv("CHROMADB_PORT", str(chroma_port))
+
+                get_settings.cache_clear()
+                _get_engine.cache_clear()
+                _get_session_factory.cache_clear()
+                chromadb_module._client = None
+
+                command.upgrade(Config("alembic.ini"), "head")
+
+                yield
+
+                get_settings.cache_clear()
+                _get_engine.cache_clear()
+                _get_session_factory.cache_clear()
+                chromadb_module._client = None
+
+    async def _create_collection_in_chroma(self, name: str):
+        """Create a ChromaDB collection and return its UUID string."""
+        from app.shared.chromadb import get_chroma_client
+        col_id = str(uuid.uuid4())
+        client = await get_chroma_client()
+        await client.create_collection(name=col_id)
+        return col_id
+
+    async def _insert_chunks(self, col_id: str, chunks: list[dict]) -> None:
+        """Insert pre-built chunk dicts into ChromaDB with fake embeddings."""
+        from app.shared.chromadb import get_chroma_client
+        client = await get_chroma_client()
+        collection = await client.get_collection(col_id)
+        await collection.add(
+            ids=[str(uuid.uuid4()) for _ in chunks],
+            embeddings=[[0.1] * 384 for _ in chunks],
+            documents=[c["child_text"] for c in chunks],
+            metadatas=[
+                {
+                    "parent_id": c["parent_id"],
+                    "parent_text": c["parent_text"],
+                    "doc_id": c["doc_id"],
+                    "collection_id": col_id,
+                }
+                for c in chunks
+            ],
+        )
+
+    async def test_collection_router_early_exit_on_empty_collection(self):
+        from app.chat.graph import collection_router
+
+        col_id = await self._create_collection_in_chroma("empty-col")
+        result = await collection_router({
+            "collection_id": col_id,
+            "conversation_id": str(uuid.uuid4()),
+            "user_message": "hello",
+            "rewritten_query": "",
+            "retrieved_chunks": [],
+            "reranked_chunks": [],
+            "messages": [],
+            "answer": "",
+            "early_exit": False,
+        })
+
+        assert result["early_exit"] is True
+
+    async def test_collection_router_continues_when_has_documents(self):
+        from app.chat.graph import collection_router
+
+        col_id = await self._create_collection_in_chroma("full-col")
+        await self._insert_chunks(col_id, [
+            {"child_text": "Paris is the capital of France.", "parent_id": "p0",
+             "parent_text": "Paris is the capital of France.", "doc_id": "d1"},
+        ])
+
+        result = await collection_router({
+            "collection_id": col_id,
+            "conversation_id": str(uuid.uuid4()),
+            "user_message": "hello",
+            "rewritten_query": "",
+            "retrieved_chunks": [],
+            "reranked_chunks": [],
+            "messages": [],
+            "answer": "",
+            "early_exit": False,
+        })
+
+        assert result["early_exit"] is False
+
+    async def test_retriever_returns_deduplicated_parent_texts(self):
+        from app.chat.graph import retriever
+
+        col_id = await self._create_collection_in_chroma("retrieval-col")
+        parent_text = "France is a country in Western Europe. Its capital is Paris."
+        await self._insert_chunks(col_id, [
+            {"child_text": "France is a country in Western Europe.", "parent_id": "p0",
+             "parent_text": parent_text, "doc_id": "d1"},
+            {"child_text": "Its capital is Paris.", "parent_id": "p0",
+             "parent_text": parent_text, "doc_id": "d1"},
+        ])
+
+        mock_embeddings = MagicMock()
+        mock_embeddings.embed_query = MagicMock(return_value=[0.1] * 384)
+
+        with patch("app.chat.graph.get_embeddings", return_value=mock_embeddings), \
+             patch("app.chat.graph.get_settings", return_value=MagicMock()):
+            result = await retriever({
+                "collection_id": col_id,
+                "conversation_id": str(uuid.uuid4()),
+                "user_message": "capital of France",
+                "rewritten_query": "capital of France",
+                "retrieved_chunks": [],
+                "reranked_chunks": [],
+                "messages": [],
+                "answer": "",
+                "early_exit": False,
+            })
+
+        assert result["early_exit"] is False
+        # Two child chunks share the same parent_id — should be deduplicated
+        assert result["retrieved_chunks"] == [parent_text]
+
+    async def test_run_rag_pipeline_early_exit_yields_message(self):
+        from app.chat.graph import run_rag_pipeline
+
+        col_id = await self._create_collection_in_chroma("pipeline-empty")
+        tokens = []
+        async for token in run_rag_pipeline(
+            collection_id=uuid.UUID(col_id),
+            conversation_id=uuid.uuid4(),
+            user_message="What is the capital of France?",
+            messages=[],
+        ):
+            tokens.append(token)
+
+        assert len(tokens) > 0
+        full = "".join(tokens)
+        assert "no documents" in full.lower() or "not found" in full.lower()
+
+    async def test_run_rag_pipeline_streams_answer(self):
+        from app.chat.graph import run_rag_pipeline
+
+        col_id = await self._create_collection_in_chroma("pipeline-full")
+        parent_text = "The capital of France is Paris. Paris is known as the City of Light."
+        await self._insert_chunks(col_id, [
+            {"child_text": "The capital of France is Paris.", "parent_id": "p0",
+             "parent_text": parent_text, "doc_id": "d1"},
+        ])
+
+        mock_embeddings = MagicMock()
+        mock_embeddings.embed_query = MagicMock(return_value=[0.1] * 384)
+
+        async def fake_astream(messages):
+            from langchain_core.messages import AIMessageChunk
+            for word in ["Paris", " is", " the", " capital."]:
+                yield AIMessageChunk(content=word)
+
+        mock_llm = MagicMock()
+        mock_llm.astream = fake_astream
+
+        with patch("app.chat.graph.get_embeddings", return_value=mock_embeddings), \
+             patch("app.chat.graph.get_settings", return_value=MagicMock()), \
+             patch("app.chat.graph.get_llm", return_value=mock_llm), \
+             patch("app.chat.graph.rerank", return_value=[parent_text]):
+            tokens = []
+            async for token in run_rag_pipeline(
+                collection_id=uuid.UUID(col_id),
+                conversation_id=uuid.uuid4(),
+                user_message="What is the capital of France?",
+                messages=[],
+            ):
+                tokens.append(token)
+
+        assert "".join(tokens) != ""
+
+
 # ── reranker unit tests ───────────────────────────────────────────────────────
 
 @pytest.mark.unit
