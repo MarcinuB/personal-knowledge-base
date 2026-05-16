@@ -13,7 +13,7 @@ class Collection(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(unique=True, nullable=False)
     description: Mapped[str | None]
-    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     documents: Mapped[list["Document"]] = relationship(back_populates="collection", cascade="all, delete-orphan")
 
@@ -26,6 +26,6 @@ class Document(Base):
     filename: Mapped[str] = mapped_column(nullable=False)
     source_type: Mapped[str] = mapped_column(nullable=False, default="upload")  # upload | connector
     status: Mapped[str] = mapped_column(nullable=False, default="processing")   # processing | ready | failed
-    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     collection: Mapped["Collection"] = relationship(back_populates="documents")
