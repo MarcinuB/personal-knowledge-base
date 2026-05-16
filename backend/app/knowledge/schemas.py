@@ -17,3 +17,11 @@ class CollectionRead(BaseModel):
     document_count: int
 
     model_config = {"from_attributes": True}
+
+
+class DocumentRead(BaseModel):
+    id: uuid.UUID
+    filename: str
+    status: str
+
+    model_config = {"from_attributes": True}
