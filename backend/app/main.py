@@ -36,6 +36,20 @@ app.include_router(chat_router, prefix="/api")
 app.include_router(chat_endpoint_router, prefix="/api")
 app.include_router(connectors_router, prefix="/api")
 
+import uuid as _uuid
+from app.shared.config import get_settings as _get_settings
+from app.connectors.dummy import DummyConnector as _DummyConnector
+from app.connectors.base import ConnectorConfig as _ConnectorConfig
+from app.connectors.service import connector_service as _connector_service
+
+_settings = _get_settings()
+if _settings.dummy_collection_id:
+    _connector_service.register(_DummyConnector(_ConnectorConfig(
+        name="dummy",
+        source_type="dummy",
+        collection_id=_uuid.UUID(_settings.dummy_collection_id),
+    )))
+
 
 @app.get("/health")
 async def health() -> dict:
