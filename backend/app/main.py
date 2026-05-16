@@ -29,9 +29,10 @@ app.add_middleware(
 )
 
 from app.knowledge.router import router as knowledge_router
-from app.chat.router import router as chat_router
+from app.chat.router import router as chat_router, chat_router as chat_endpoint_router
 app.include_router(knowledge_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
+app.include_router(chat_endpoint_router, prefix="/api")
 
 # Routers added in later phases:
 # from app.connectors.router import router as connectors_router
