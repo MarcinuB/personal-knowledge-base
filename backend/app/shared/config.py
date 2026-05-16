@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     chromadb_host: str = "chromadb"
     chromadb_port: int = 8001
 
+    # Connectors
+    dummy_collection_id: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

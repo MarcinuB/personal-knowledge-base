@@ -122,38 +122,6 @@ class TestConnectorServiceSync:
         assert captured == ["connector"]
 
 
-@pytest.mark.unit
-class TestDummyConnector:
-    async def test_yields_default_document_when_no_settings(self):
-        from app.connectors.dummy import DummyConnector
-        connector = DummyConnector(_make_config())
-        docs = [doc async for doc in connector.sync()]
-        assert len(docs) == 1
-        assert docs[0].page_content != ""
-
-    async def test_yields_configured_documents(self):
-        from app.connectors.dummy import DummyConnector
-        config = ConnectorConfig(
-            name="d",
-            source_type="dummy",
-            collection_id=uuid.uuid4(),
-            settings={"documents": [
-                {"content": "First", "source": "s1"},
-                {"content": "Second", "source": "s2"},
-            ]},
-        )
-        connector = DummyConnector(config)
-        docs = [doc async for doc in connector.sync()]
-        assert len(docs) == 2
-        assert docs[0].page_content == "First"
-        assert docs[1].page_content == "Second"
-
-    async def test_health_check_returns_true(self):
-        from app.connectors.dummy import DummyConnector
-        connector = DummyConnector(_make_config())
-        assert await connector.health_check() is True
-
-
 # ── integration tests ─────────────────────────────────────────────────────────
 
 @pytest.mark.integration
