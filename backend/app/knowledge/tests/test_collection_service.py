@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -97,3 +97,115 @@ class TestGetCollection:
             await get_collection(db, uuid.uuid4())
 
         assert exc_info.value.status_code == 404
+
+
+@pytest.mark.integration
+class TestCollectionServiceIntegration:
+    @pytest.fixture(autouse=True)
+    def infrastructure(self, monkeypatch):
+        from alembic import command
+        from alembic.config import Config
+        from testcontainers.core.container import DockerContainer
+        from testcontainers.core.waiting_utils import wait_for_logs
+        from testcontainers.postgres import PostgresContainer
+
+        import app.shared.chromadb as chromadb_module
+        from app.shared.config import get_settings
+        from app.shared.database import _get_engine, _get_session_factory
+
+        with PostgresContainer("postgres:16-alpine") as pg:
+            with DockerContainer("chromadb/chroma:latest").with_exposed_ports(8000) as chroma:
+                wait_for_logs(chroma, "Application startup complete", timeout=30)
+
+                pg_url = pg.get_connection_url().replace("postgresql+psycopg2://", "postgresql+asyncpg://")
+                chroma_host = chroma.get_container_host_ip()
+                chroma_port = chroma.get_exposed_port(8000)
+
+                monkeypatch.setenv("POSTGRES_URL", pg_url)
+                monkeypatch.setenv("CHROMADB_HOST", chroma_host)
+                monkeypatch.setenv("CHROMADB_PORT", str(chroma_port))
+
+                get_settings.cache_clear()
+                _get_engine.cache_clear()
+                _get_session_factory.cache_clear()
+                chromadb_module._client = None
+
+                command.upgrade(Config("alembic.ini"), "head")
+
+                yield
+
+                get_settings.cache_clear()
+                _get_engine.cache_clear()
+                _get_session_factory.cache_clear()
+                chromadb_module._client = None
+
+    async def test_create_persists_to_postgres_and_chromadb(self):
+        from app.knowledge.service import create_collection, list_collections
+        from app.shared.database import _get_session_factory
+
+        async with _get_session_factory()() as db:
+            result = await create_collection(db, CollectionCreate(name="Recipes", description="My recipes"))
+
+        assert result.name == "Recipes"
+        assert result.description == "My recipes"
+        assert result.document_count == 0
+
+        async with _get_session_factory()() as db:
+            collections = await list_collections(db)
+
+        assert len(collections) == 1
+        assert collections[0].name == "Recipes"
+
+    async def test_get_collection_returns_correct_data(self):
+        from app.knowledge.service import create_collection, get_collection
+        from app.shared.database import _get_session_factory
+
+        async with _get_session_factory()() as db:
+            created = await create_collection(db, CollectionCreate(name="Gardening", description="Plants"))
+
+        async with _get_session_factory()() as db:
+            fetched = await get_collection(db, created.id)
+
+        assert fetched.id == created.id
+        assert fetched.name == "Gardening"
+        assert fetched.description == "Plants"
+
+    async def test_delete_removes_from_postgres_and_chromadb(self):
+        from app.knowledge.service import create_collection, delete_collection, list_collections
+        from app.shared.database import _get_session_factory
+
+        async with _get_session_factory()() as db:
+            created = await create_collection(db, CollectionCreate(name="ToDelete"))
+
+        async with _get_session_factory()() as db:
+            await delete_collection(db, created.id)
+
+        async with _get_session_factory()() as db:
+            collections = await list_collections(db)
+
+        assert len(collections) == 0
+
+    async def test_delete_nonexistent_raises_404(self):
+        from app.knowledge.service import delete_collection
+        from app.shared.database import _get_session_factory
+
+        async with _get_session_factory()() as db:
+            with pytest.raises(HTTPException) as exc_info:
+                await delete_collection(db, uuid.uuid4())
+
+        assert exc_info.value.status_code == 404
+
+    async def test_list_returns_document_count(self):
+        from app.knowledge.service import create_collection, list_collections
+        from app.shared.database import _get_session_factory
+
+        async with _get_session_factory()() as db:
+            await create_collection(db, CollectionCreate(name="First"))
+        async with _get_session_factory()() as db:
+            await create_collection(db, CollectionCreate(name="Second"))
+
+        async with _get_session_factory()() as db:
+            collections = await list_collections(db)
+
+        assert len(collections) == 2
+        assert all(c.document_count == 0 for c in collections)
