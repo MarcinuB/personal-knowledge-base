@@ -29,3 +29,6 @@ frontend/build/
 
 # OS
 .DS_Store
+
+# Claude
+.claude/
