@@ -24,6 +24,8 @@ class Document(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     collection_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("collections.id"), nullable=False)
     filename: Mapped[str] = mapped_column(nullable=False)
+    source_type: Mapped[str] = mapped_column(nullable=False, default="upload")  # upload | connector
+    status: Mapped[str] = mapped_column(nullable=False, default="processing")   # processing | ready | failed
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
 
     collection: Mapped["Collection"] = relationship(back_populates="documents")
