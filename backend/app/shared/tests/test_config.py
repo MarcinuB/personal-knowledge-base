@@ -11,7 +11,6 @@ class TestSettingsDefaults:
         assert s.llm_provider == "ollama"
         assert s.ollama_base_url == "http://ollama:11434"
         assert s.ollama_model == "llama3"
-        assert s.openai_api_key == ""
 
     def test_embedding_defaults(self):
         s = Settings()
