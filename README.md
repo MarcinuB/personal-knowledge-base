@@ -83,16 +83,51 @@ Then restart: `docker compose up`
 
 ## Running Tests
 
-```bash
-# Unit tests (no infrastructure required)
-docker compose run --rm backend pytest backend/app -m unit
+### Option A — local venv (recommended for development)
 
-# Integration tests (spins up real Postgres + ChromaDB via testcontainers)
-docker compose run --rm backend pytest backend/app -m integration
+Faster iteration: no container spin-up, instant feedback on unit tests.
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
+```
+
+Then run tests:
+
+```bash
+# All unit tests
+pytest app -m unit
+
+# Single file
+pytest app/shared/tests/test_config.py -v
+
+# Single class or test
+pytest app/shared/tests/test_config.py::TestSettingsDefaults -v
+
+# Integration tests — start dependencies first
+docker compose up -d postgres chromadb
+pytest app -m integration
+```
+
+### Option B — Docker (useful for CI or a clean environment check)
+
+Note: paths are relative to the container's `/app` working directory, not the repo root.
+
+```bash
+# All unit tests
+docker compose run --rm backend pytest app -m unit
+
+# Single file
+docker compose run --rm backend pytest app/shared/tests/test_config.py -v
+
+# Integration tests (testcontainers spins up Postgres + ChromaDB automatically)
+docker compose run --rm backend pytest app -m integration
 
 # E2E tests (requires full stack running)
 docker compose up -d
-pytest backend/tests -m e2e
+docker compose run --rm backend pytest tests -m e2e
 ```
 
 ---
