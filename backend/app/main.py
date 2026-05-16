@@ -28,13 +28,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Domain routers are registered here as phases are completed:
-# from app.knowledge.router import router as knowledge_router
+from app.knowledge.router import router as knowledge_router
+app.include_router(knowledge_router, prefix="/api")
+
+# Routers added in later phases:
 # from app.chat.router import router as chat_router
 # from app.connectors.router import router as connectors_router
-# app.include_router(knowledge_router, prefix="/api/knowledge", tags=["knowledge"])
-# app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
-# app.include_router(connectors_router, prefix="/api/connectors", tags=["connectors"])
+# app.include_router(chat_router, prefix="/api")
+# app.include_router(connectors_router, prefix="/api")
 
 
 @app.get("/health")
