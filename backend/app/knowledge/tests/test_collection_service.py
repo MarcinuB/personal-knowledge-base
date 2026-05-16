@@ -106,20 +106,21 @@ class TestCollectionServiceIntegration:
         from alembic import command
         from alembic.config import Config
         from testcontainers.core.container import DockerContainer
-        from testcontainers.core.waiting_utils import wait_for_logs
         from testcontainers.postgres import PostgresContainer
 
         import app.shared.chromadb as chromadb_module
         from app.shared.config import get_settings
         from app.shared.database import _get_engine, _get_session_factory
+        from conftest import wait_for_chroma
 
         with PostgresContainer("postgres:16-alpine") as pg:
             with DockerContainer("chromadb/chroma:latest").with_exposed_ports(8000) as chroma:
-                wait_for_logs(chroma, "Application startup complete", timeout=30)
-
-                pg_url = pg.get_connection_url().replace("postgresql+psycopg2://", "postgresql+asyncpg://")
                 chroma_host = chroma.get_container_host_ip()
                 chroma_port = chroma.get_exposed_port(8000)
+                wait_for_chroma(chroma_host, chroma_port)
+
+                pg_url = pg.get_connection_url().replace("postgresql+psycopg2://", "postgresql+asyncpg://")
+
 
                 monkeypatch.setenv("POSTGRES_URL", pg_url)
                 monkeypatch.setenv("CHROMADB_HOST", chroma_host)
