@@ -36,7 +36,14 @@ class TestGetChromaClientSingleton:
 class TestChromaDBIntegration:
     async def test_heartbeat_succeeds(self):
         import chromadb as chroma
+        from testcontainers.core.container import DockerContainer
+        from conftest import wait_for_chroma
 
-        client = await chroma.AsyncHttpClient(host="chromadb", port=8001)
-        result = await client.heartbeat()
+        with DockerContainer("chromadb/chroma:latest").with_exposed_ports(8000) as container:
+            host = container.get_container_host_ip()
+            port = container.get_exposed_port(8000)
+            wait_for_chroma(host, port)
+
+            client = await chroma.AsyncHttpClient(host=host, port=int(port))
+            result = await client.heartbeat()
         assert isinstance(result, int)
