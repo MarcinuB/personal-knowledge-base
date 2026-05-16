@@ -28,6 +28,11 @@ class ConversationRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ChatRequest(BaseModel):
+    conversation_id: uuid.UUID
+    message: str
+
+
 class ConversationSummary(BaseModel):
     """Lightweight shape for the sidebar — no messages."""
     id: uuid.UUID
