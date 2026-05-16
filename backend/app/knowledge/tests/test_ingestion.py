@@ -103,9 +103,11 @@ class TestIngestDocument:
         db = AsyncMock()
         db.refresh = AsyncMock()
 
+        # _parse_file succeeds; error happens inside _ingest_text (during chunking)
         with patch("app.knowledge.service.get_collection", AsyncMock(return_value=MagicMock())), \
              patch("app.knowledge.service.Document", return_value=mock_doc), \
-             patch("app.knowledge.service._parse_file", side_effect=RuntimeError("parse error")):
+             patch("app.knowledge.service._parse_file", return_value="some text"), \
+             patch("app.knowledge.service.chunk_document", side_effect=RuntimeError("chunk error")):
 
             with pytest.raises(RuntimeError):
                 await ingest_document(db, uuid.uuid4(), b"x", "bad.txt")

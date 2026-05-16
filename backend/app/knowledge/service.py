@@ -94,21 +94,20 @@ def _parse_file(file_bytes: bytes, filename: str) -> str:
         os.unlink(tmp_path)
 
 
-async def ingest_document(
+async def _ingest_text(
     db: AsyncSession,
     collection_id: uuid.UUID,
-    file_bytes: bytes,
-    filename: str,
+    text: str,
+    source_name: str,
+    source_type: str = "upload",
 ) -> DocumentRead:
-    await get_collection(db, collection_id)  # raises 404 if missing
-
-    doc = Document(collection_id=collection_id, filename=filename, source_type="upload", status="processing")
+    """Chunk, embed, and store text in ChromaDB; create a Document row."""
+    doc = Document(collection_id=collection_id, filename=source_name, source_type=source_type, status="processing")
     db.add(doc)
     await db.commit()
     await db.refresh(doc)
 
     try:
-        text = await asyncio.to_thread(_parse_file, file_bytes, filename)
         chunks = chunk_document(text, str(doc.id), str(collection_id))
 
         embeddings = get_embeddings(get_settings())
@@ -135,6 +134,17 @@ async def ingest_document(
         await db.commit()
 
     return DocumentRead(id=doc.id, filename=doc.filename, status=doc.status)
+
+
+async def ingest_document(
+    db: AsyncSession,
+    collection_id: uuid.UUID,
+    file_bytes: bytes,
+    filename: str,
+) -> DocumentRead:
+    await get_collection(db, collection_id)  # raises 404 if missing
+    text = await asyncio.to_thread(_parse_file, file_bytes, filename)
+    return await _ingest_text(db, collection_id, text, filename, source_type="upload")
 
 
 async def delete_collection(db: AsyncSession, collection_id: uuid.UUID) -> None:
