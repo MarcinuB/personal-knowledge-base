@@ -161,3 +161,53 @@ See [docs/adr/](docs/adr/) for the full set of Architecture Decision Records:
 
 See [CONTEXT.md](CONTEXT.md) for definitions of Collection, Document, Chunk, Connector,
 Conversation, Message, and other domain terms.
+
+---
+
+## Troubleshooting
+
+### ChromaDB connectivity errors
+
+**Symptom:** Backend logs show `Connection refused` or `Failed to connect to ChromaDB` on startup.
+
+**Cause:** The backend started before ChromaDB finished initialising. This is rare after the healthcheck was added, but can happen on very slow machines.
+
+**Fix:** Restart the backend service:
+```bash
+docker compose restart backend
+```
+
+If it keeps failing, check ChromaDB health directly:
+```bash
+curl http://localhost:8001/api/v1/heartbeat
+```
+
+---
+
+### Alembic migration failures
+
+**Symptom:** Backend exits immediately with an `alembic` error, or the `/health` endpoint returns 500 shortly after `docker compose up`.
+
+**Cause:** A previous migration left the database in an inconsistent state, or the `postgres` service wasn't fully ready before the backend started.
+
+**Fix:** Check the backend logs for the specific error, then reset if needed:
+```bash
+docker compose logs backend
+
+# Nuclear option — wipes all data and reruns migrations from scratch:
+docker compose down -v && docker compose up
+```
+
+---
+
+### Chat fails when using OpenAI
+
+**Symptom:** Sending a chat message returns an error such as `AuthenticationError` or `Incorrect API key`.
+
+**Cause:** `LLM_PROVIDER` is set to `openai` but `OPENAI_API_KEY` is missing or invalid in your `.env` file.
+
+**Fix:** Add your key to `.env` (copy `.env.example` as a starting point) and restart:
+```bash
+echo "OPENAI_API_KEY=sk-..." >> .env
+docker compose restart backend
+```

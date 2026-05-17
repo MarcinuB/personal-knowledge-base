@@ -1,10 +1,14 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from alembic import command
 from alembic.config import Config
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -49,6 +53,12 @@ if _settings.dummy_collection_id:
         source_type="dummy",
         collection_id=_uuid.UUID(_settings.dummy_collection_id),
     )))
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled exception on %s %s", request.method, request.url)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 @app.get("/health")
