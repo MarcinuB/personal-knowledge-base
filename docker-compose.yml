@@ -12,16 +12,16 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - POSTGRES_URL=postgresql+asyncpg://pkb:pkb@postgres:5432/pkb
       - CHROMADB_HOST=chromadb
-      - CHROMADB_PORT=8001
+      - CHROMADB_PORT=8000
     depends_on:
       postgres:
         condition: service_healthy
       chromadb:
-        condition: service_healthy
+        condition: service_started
       ollama:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -36,7 +36,7 @@ services:
       - "3000:80"
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_started
     restart: unless-stopped
 
   chromadb:
@@ -46,7 +46,7 @@ services:
     volumes:
       - chromadb_data:/chroma/chroma
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v2/heartbeat')"]
       interval: 10s
       timeout: 5s
       retries: 5
