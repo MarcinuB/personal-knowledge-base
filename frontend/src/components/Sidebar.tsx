@@ -127,7 +127,7 @@ function ConversationList({
           >
             <div className="font-medium truncate">{conv.title ?? 'New conversation'}</div>
             <div className={`text-xs mt-0.5 ${conv.id === activeId ? 'text-blue-200' : 'text-gray-500'}`}>
-              {formatDistanceToNow(new Date(conv.created_at), { addSuffix: true })}
+              {formatDistanceToNow(new Date(conv.created_at.endsWith('Z') ? conv.created_at : conv.created_at + 'Z'), { addSuffix: true })}
             </div>
           </button>
         </li>
