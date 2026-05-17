@@ -54,6 +54,7 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
 markers = [
     "unit: fast tests with no external dependencies",
     "integration: tests that require real Postgres and ChromaDB",
