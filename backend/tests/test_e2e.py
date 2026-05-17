@@ -11,6 +11,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+import pytest_asyncio
 
 # All tests in this module share a single session-scoped event loop so that
 # the session-scoped httpx.AsyncClient is usable from every test function.
@@ -37,7 +38,7 @@ async def collect_sse_tokens(response: httpx.Response) -> tuple[str, dict]:
     return "".join(tokens), done_event
 
 
-@pytest.fixture(scope="session", loop_scope="session")
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def client():
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=120.0) as c:
         try:
@@ -48,7 +49,7 @@ async def client():
         yield c
 
 
-@pytest.fixture(scope="session", loop_scope="session")
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def e2e_collection(client: httpx.AsyncClient) -> str:
     name = f"e2e-{uuid.uuid4().hex[:8]}"
     resp = await client.post(
