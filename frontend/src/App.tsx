@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Toaster } from 'sonner';
 import { Sidebar } from './components/Sidebar';
 import { ChatWindow } from './components/ChatWindow';
 
@@ -12,6 +13,7 @@ export default function App() {
         onConversationSelect={setActiveConversationId}
       />
       <ChatWindow conversationId={activeConversationId} />
+      <Toaster richColors position="bottom-right" />
     </div>
   );
 }
