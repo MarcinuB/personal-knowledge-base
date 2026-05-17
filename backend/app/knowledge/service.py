@@ -127,7 +127,8 @@ async def _ingest_text(
         )
 
         doc.status = "ready"
-    except Exception:
+    except Exception as e:
+        print(f"[_ingest_text] error: {e}", flush=True)
         doc.status = "failed"
         raise
     finally:
