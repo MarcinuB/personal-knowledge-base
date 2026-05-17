@@ -115,7 +115,7 @@ async def _ingest_text(
         vectors = await asyncio.to_thread(embeddings.embed_documents, child_texts)
 
         chroma = await get_chroma_client()
-        chroma_col = await chroma.get_collection(str(collection_id))
+        chroma_col = await chroma.get_or_create_collection(str(collection_id))
         await chroma_col.add(
             ids=[str(uuid.uuid4()) for _ in chunks],
             embeddings=vectors,
