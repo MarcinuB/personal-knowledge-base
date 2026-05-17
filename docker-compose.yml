@@ -63,6 +63,7 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    entrypoint: ["/bin/sh", "-c", "ollama serve & pid=$$! && sleep 5 && ollama pull ${OLLAMA_MODEL:-llama3} && ollama pull ${EMBEDDING_MODEL:-nomic-embed-text} && wait $$pid"]
     restart: unless-stopped
 
 volumes:
