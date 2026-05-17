@@ -1,3 +1,9 @@
+FROM node:20-alpine AS dev
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+EXPOSE 5173
+
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
