@@ -29,7 +29,7 @@ class TestGetLlm:
         from app.shared.llm import get_llm
 
         mock_cls = MagicMock()
-        s = _settings(llm_provider="ollama", ollama_model="llama3", ollama_base_url="http://ollama:11434")
+        s = _settings(llm_provider="ollama", llm_model="llama3", ollama_base_url="http://ollama:11434")
         with patch.dict("sys.modules", {"langchain_ollama": MagicMock(ChatOllama=mock_cls)}):
             get_llm(s)
 
@@ -48,7 +48,7 @@ class TestGetLlm:
         from app.shared.llm import get_llm
 
         mock_cls = MagicMock()
-        s = _settings(llm_provider="openai", ollama_model="gpt-4o", openai_api_key="sk-test")
+        s = _settings(llm_provider="openai", llm_model="gpt-4o", openai_api_key="sk-test")
         with patch.dict("sys.modules", {"langchain_openai": MagicMock(ChatOpenAI=mock_cls)}):
             get_llm(s)
 

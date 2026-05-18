@@ -57,7 +57,7 @@ Copy `.env.example` to `.env` and adjust as needed.
 |---|---|---|
 | `LLM_PROVIDER` | `ollama` | `ollama` or `openai` |
 | `OLLAMA_BASE_URL` | `http://ollama:11434` | Ollama service URL |
-| `OLLAMA_MODEL` | `llama3` | LLM model name |
+| `LLM_MODEL` | `llama3` | LLM model name (use `OLLAMA_MODEL` for legacy compat) |
 | `EMBEDDING_PROVIDER` | `ollama` | `ollama` or `openai` |
 | `EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model name |
 | `OPENAI_API_KEY` | `` | Required if provider is `openai` |
