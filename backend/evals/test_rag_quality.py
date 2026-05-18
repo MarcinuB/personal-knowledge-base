@@ -67,10 +67,12 @@ class TestRagQuality:
                 chromadb_module._client = None
 
     async def test_faithfulness_and_answer_relevancy(self):
-        from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+        from openai import OpenAI
+
         from ragas import EvaluationDataset, SingleTurnSample, evaluate
-        from ragas.llms import LangchainLLMWrapper
-        from ragas.metrics import AnswerRelevancy, Faithfulness
+        from ragas.embeddings import OpenAIEmbeddings
+        from ragas.llms import llm_factory
+        from ragas.metrics.collections import AnswerRelevancy, Faithfulness
 
         from app.chat.graph import graph
         from app.knowledge.schemas import CollectionCreate
@@ -132,8 +134,9 @@ class TestRagQuality:
         settings = get_settings()
         api_key = settings.openai_api_key or None  # falls back to OPENAI_API_KEY env var if empty
 
-        judge_llm = LangchainLLMWrapper(ChatOpenAI(model="gpt-4o-mini", api_key=api_key))
-        judge_embeddings = OpenAIEmbeddings(api_key=api_key)
+        client = OpenAI(api_key=api_key)
+        judge_llm = llm_factory("gpt-4o-mini", client=client)
+        judge_embeddings = OpenAIEmbeddings(client=client)
 
         dataset = EvaluationDataset(samples=samples)
         results = evaluate(

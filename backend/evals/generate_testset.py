@@ -12,9 +12,11 @@ entries before committing testset.json.
 import json
 from pathlib import Path
 
+from openai import OpenAI
+
 from langchain_community.document_loaders import TextLoader
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from ragas.llms import LangchainLLMWrapper
+from ragas.embeddings import OpenAIEmbeddings
+from ragas.llms import llm_factory
 from ragas.testset import TestsetGenerator
 
 import sys
@@ -32,8 +34,9 @@ def main() -> None:
 
     docs = TextLoader(str(SAMPLE_DOC)).load()
 
-    llm = LangchainLLMWrapper(ChatOpenAI(model="gpt-4o-mini", api_key=api_key))
-    embeddings = OpenAIEmbeddings(api_key=api_key)
+    client = OpenAI(api_key=api_key)
+    llm = llm_factory("gpt-4o-mini", client=client)
+    embeddings = OpenAIEmbeddings(client=client)
 
     generator = TestsetGenerator(llm=llm, embedding_model=embeddings)
     testset = generator.generate_with_langchain_docs(docs, testset_size=TESTSET_SIZE)
