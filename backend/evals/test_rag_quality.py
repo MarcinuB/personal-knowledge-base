@@ -54,6 +54,7 @@ class TestRagQuality:
                 monkeypatch.setenv("EMBEDDING_PROVIDER", "openai")
                 monkeypatch.setenv("EMBEDDING_MODEL", "text-embedding-3-small")
                 monkeypatch.setenv("LLM_PROVIDER", "openai")
+                monkeypatch.setenv("OLLAMA_MODEL", "gpt-4o-mini")
 
                 get_settings.cache_clear()
                 _get_engine.cache_clear()
