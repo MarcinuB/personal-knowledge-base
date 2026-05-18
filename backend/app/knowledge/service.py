@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import os
 import tempfile
 import uuid
@@ -94,15 +95,45 @@ def _parse_file(file_bytes: bytes, filename: str) -> str:
         os.unlink(tmp_path)
 
 
+async def _find_existing(db: AsyncSession, collection_id: uuid.UUID, source_uri: str) -> Document | None:
+    result = await db.execute(
+        select(Document).where(
+            Document.collection_id == collection_id,
+            Document.source_uri == source_uri,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 async def _ingest_text(
     db: AsyncSession,
     collection_id: uuid.UUID,
     text: str,
     source_name: str,
     source_type: str = "upload",
+    source_uri: str | None = None,
 ) -> DocumentRead:
-    """Chunk, embed, and store text in ChromaDB; create a Document row."""
-    doc = Document(collection_id=collection_id, filename=source_name, source_type=source_type, status="processing")
+    """Chunk, embed, and store text in ChromaDB; create a Document row.
+
+    Implements upsert: skips unchanged content (same hash), replaces changed
+    content by writing new chunks first then deleting old ones.
+    """
+    if source_uri is None:
+        source_uri = source_name
+    content_hash = hashlib.sha256(text.encode()).hexdigest()
+
+    existing = await _find_existing(db, collection_id, source_uri)
+    if existing and existing.content_hash == content_hash:
+        return DocumentRead(id=existing.id, filename=existing.filename, status=existing.status)
+
+    doc = Document(
+        collection_id=collection_id,
+        filename=source_name,
+        source_type=source_type,
+        status="processing",
+        source_uri=source_uri,
+        content_hash=content_hash,
+    )
     db.add(doc)
     await db.commit()
     await db.refresh(doc)
@@ -132,6 +163,13 @@ async def _ingest_text(
         doc.status = "failed"
         raise
     finally:
+        await db.commit()
+
+    if existing:
+        chroma = await get_chroma_client()
+        chroma_col = await chroma.get_or_create_collection(str(collection_id))
+        await chroma_col.delete(where={"doc_id": str(existing.id)})
+        await db.delete(existing)
         await db.commit()
 
     return DocumentRead(id=doc.id, filename=doc.filename, status=doc.status)
