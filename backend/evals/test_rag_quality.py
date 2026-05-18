@@ -52,6 +52,7 @@ class TestRagQuality:
                 # Use OpenAI for both embeddings and LLM so the full pipeline
                 # works without Ollama, and retrieval vectors actually match.
                 monkeypatch.setenv("EMBEDDING_PROVIDER", "openai")
+                monkeypatch.setenv("EMBEDDING_MODEL", "text-embedding-3-small")
                 monkeypatch.setenv("LLM_PROVIDER", "openai")
 
                 get_settings.cache_clear()
