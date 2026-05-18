@@ -26,6 +26,8 @@ class Document(Base):
     filename: Mapped[str] = mapped_column(nullable=False)
     source_type: Mapped[str] = mapped_column(nullable=False, default="upload")  # upload | connector
     status: Mapped[str] = mapped_column(nullable=False, default="processing")   # processing | ready | failed
+    source_uri: Mapped[str | None] = mapped_column(nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     collection: Mapped["Collection"] = relationship(back_populates="documents")

@@ -79,6 +79,7 @@ class TestIngestDocument:
         mock_chroma.get_collection = AsyncMock(return_value=mock_chroma_col)
 
         with patch("app.knowledge.service.get_collection", AsyncMock(return_value=MagicMock())), \
+             patch("app.knowledge.service._find_existing", AsyncMock(return_value=None)), \
              patch("app.knowledge.service.Document", return_value=mock_doc), \
              patch("app.knowledge.service._parse_file", return_value="some text " * 50), \
              patch("app.knowledge.service.chunk_document", return_value=[
@@ -105,6 +106,7 @@ class TestIngestDocument:
 
         # _parse_file succeeds; error happens inside _ingest_text (during chunking)
         with patch("app.knowledge.service.get_collection", AsyncMock(return_value=MagicMock())), \
+             patch("app.knowledge.service._find_existing", AsyncMock(return_value=None)), \
              patch("app.knowledge.service.Document", return_value=mock_doc), \
              patch("app.knowledge.service._parse_file", return_value="some text"), \
              patch("app.knowledge.service.chunk_document", side_effect=RuntimeError("chunk error")):
@@ -113,6 +115,116 @@ class TestIngestDocument:
                 await ingest_document(db, uuid.uuid4(), b"x", "bad.txt")
 
         assert mock_doc.status == "failed"
+
+
+# ── upsert unit tests ─────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+class TestUpsertLogic:
+    def _make_doc(self, doc_id, filename, content_hash):
+        doc = MagicMock()
+        doc.id = doc_id
+        doc.filename = filename
+        doc.status = "ready"
+        doc.content_hash = content_hash
+        return doc
+
+    async def test_skip_when_hash_unchanged(self):
+        from app.knowledge.service import _ingest_text
+
+        col_id = uuid.uuid4()
+        doc_id = uuid.uuid4()
+        text = "same content " * 50
+        existing_doc = self._make_doc(doc_id, "file.txt", __import__("hashlib").sha256(text.encode()).hexdigest())
+
+        db = AsyncMock()
+
+        mock_chroma_col = AsyncMock()
+        mock_chroma = AsyncMock()
+        mock_chroma.get_or_create_collection = AsyncMock(return_value=mock_chroma_col)
+
+        with patch("app.knowledge.service._find_existing", AsyncMock(return_value=existing_doc)), \
+             patch("app.knowledge.service.get_chroma_client", AsyncMock(return_value=mock_chroma)):
+            result = await _ingest_text(db, col_id, text, "file.txt")
+
+        assert result.id == doc_id
+        db.add.assert_not_called()
+        mock_chroma_col.add.assert_not_called()
+
+    async def test_replaces_when_hash_changed(self):
+        from app.knowledge.service import _ingest_text
+
+        col_id = uuid.uuid4()
+        old_doc_id = uuid.uuid4()
+        new_doc_id = uuid.uuid4()
+        old_text = "old content " * 50
+        new_text = "new content " * 50
+
+        existing_doc = self._make_doc(old_doc_id, "file.txt", __import__("hashlib").sha256(old_text.encode()).hexdigest())
+
+        new_mock_doc = MagicMock()
+        new_mock_doc.id = new_doc_id
+        new_mock_doc.filename = "file.txt"
+        new_mock_doc.status = "processing"
+
+        db = AsyncMock()
+        db.refresh = AsyncMock()
+
+        mock_chroma_col = AsyncMock()
+        mock_chroma = AsyncMock()
+        mock_chroma.get_or_create_collection = AsyncMock(return_value=mock_chroma_col)
+
+        with patch("app.knowledge.service._find_existing", AsyncMock(return_value=existing_doc)), \
+             patch("app.knowledge.service.Document", return_value=new_mock_doc), \
+             patch("app.knowledge.service.chunk_document", return_value=[
+                 {"child_text": "chunk", "parent_id": "p0", "parent_text": "parent",
+                  "doc_id": str(new_doc_id), "collection_id": str(col_id)}
+             ]), \
+             patch("app.knowledge.service.get_embeddings", return_value=MagicMock(
+                 embed_documents=MagicMock(return_value=[[0.1, 0.2]])
+             )), \
+             patch("app.knowledge.service.get_chroma_client", AsyncMock(return_value=mock_chroma)):
+            result = await _ingest_text(db, col_id, new_text, "file.txt")
+
+        assert result.id == new_doc_id
+        mock_chroma_col.add.assert_called_once()
+        mock_chroma_col.delete.assert_called_once_with(where={"doc_id": str(old_doc_id)})
+        db.delete.assert_called_once_with(existing_doc)
+
+    async def test_ingest_fresh_when_no_prior_doc(self):
+        from app.knowledge.service import _ingest_text
+
+        col_id = uuid.uuid4()
+        doc_id = uuid.uuid4()
+
+        mock_doc = MagicMock()
+        mock_doc.id = doc_id
+        mock_doc.filename = "new.txt"
+        mock_doc.status = "processing"
+
+        db = AsyncMock()
+        db.refresh = AsyncMock()
+
+        mock_chroma_col = AsyncMock()
+        mock_chroma = AsyncMock()
+        mock_chroma.get_or_create_collection = AsyncMock(return_value=mock_chroma_col)
+
+        with patch("app.knowledge.service._find_existing", AsyncMock(return_value=None)), \
+             patch("app.knowledge.service.Document", return_value=mock_doc), \
+             patch("app.knowledge.service.chunk_document", return_value=[
+                 {"child_text": "chunk", "parent_id": "p0", "parent_text": "parent",
+                  "doc_id": str(doc_id), "collection_id": str(col_id)}
+             ]), \
+             patch("app.knowledge.service.get_embeddings", return_value=MagicMock(
+                 embed_documents=MagicMock(return_value=[[0.1, 0.2]])
+             )), \
+             patch("app.knowledge.service.get_chroma_client", AsyncMock(return_value=mock_chroma)):
+            result = await _ingest_text(db, col_id, "fresh content " * 50, "new.txt")
+
+        assert result.id == doc_id
+        mock_chroma_col.add.assert_called_once()
+        mock_chroma_col.delete.assert_not_called()
+        db.delete.assert_not_called()
 
 
 # ── integration tests ─────────────────────────────────────────────────────────
@@ -185,6 +297,71 @@ class TestIngestionIntegration:
         chroma_col = await chroma.get_collection(str(collection.id))
         count = await chroma_col.count()
         assert count > 0
+
+    async def test_reupload_same_file_does_not_grow_chromadb(self):
+        from app.knowledge.service import create_collection, ingest_document
+        from app.knowledge.schemas import CollectionCreate
+        from app.shared.chromadb import get_chroma_client
+        from app.shared.database import _get_session_factory
+
+        txt_content = b"The quick brown fox jumps over the lazy dog. " * 100
+
+        mock_embeddings = MagicMock()
+        mock_embeddings.embed_documents = MagicMock(
+            side_effect=lambda texts: [[0.1] * 384 for _ in texts]
+        )
+
+        async with _get_session_factory()() as db:
+            collection = await create_collection(db, CollectionCreate(name="UpsertCol"))
+
+        with patch("app.knowledge.service.get_embeddings", return_value=mock_embeddings):
+            async with _get_session_factory()() as db:
+                await ingest_document(db, collection.id, txt_content, "upsert.txt")
+
+        chroma = await get_chroma_client()
+        chroma_col = await chroma.get_collection(str(collection.id))
+        count_after_first = await chroma_col.count()
+        assert count_after_first > 0
+
+        with patch("app.knowledge.service.get_embeddings", return_value=mock_embeddings):
+            async with _get_session_factory()() as db:
+                await ingest_document(db, collection.id, txt_content, "upsert.txt")
+
+        count_after_second = await chroma_col.count()
+        assert count_after_second == count_after_first
+
+    async def test_reupload_changed_file_replaces_chunks(self):
+        from app.knowledge.service import create_collection, ingest_document
+        from app.knowledge.schemas import CollectionCreate
+        from app.shared.chromadb import get_chroma_client
+        from app.shared.database import _get_session_factory
+
+        content_v1 = b"Version one content. " * 100
+        content_v2 = b"Version two content, completely different. " * 100
+
+        mock_embeddings = MagicMock()
+        mock_embeddings.embed_documents = MagicMock(
+            side_effect=lambda texts: [[0.1] * 384 for _ in texts]
+        )
+
+        async with _get_session_factory()() as db:
+            collection = await create_collection(db, CollectionCreate(name="ReplaceCol"))
+
+        with patch("app.knowledge.service.get_embeddings", return_value=mock_embeddings):
+            async with _get_session_factory()() as db:
+                await ingest_document(db, collection.id, content_v1, "replace.txt")
+
+        chroma = await get_chroma_client()
+        chroma_col = await chroma.get_collection(str(collection.id))
+        count_v1 = await chroma_col.count()
+
+        with patch("app.knowledge.service.get_embeddings", return_value=mock_embeddings):
+            async with _get_session_factory()() as db:
+                await ingest_document(db, collection.id, content_v2, "replace.txt")
+
+        count_v2 = await chroma_col.count()
+        assert count_v2 > 0
+        assert count_v2 == count_v1  # same chunk count (content same length), old chunks gone
 
     async def test_ingest_sets_failed_status_on_bad_file(self):
         from app.knowledge.service import create_collection, ingest_document
