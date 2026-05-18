@@ -9,14 +9,13 @@ Run manually or in a nightly CI job — never on every PR:
     OPENAI_API_KEY=sk-... pytest -m eval evals/test_rag_quality.py -v -s
 
 Requires:
-    - OPENAI_API_KEY env var (for RAGAS judge LLM)
+    - OPENAI_API_KEY env var (used for ingestion embeddings, LLM generation, and RAGAS judge)
     - Docker (testcontainers spin up Postgres + ChromaDB)
     - testset.json committed to evals/ (generate with evals/generate_testset.py)
 """
 import json
 import uuid
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -50,7 +49,10 @@ class TestRagQuality:
                 monkeypatch.setenv("POSTGRES_URL", pg_url)
                 monkeypatch.setenv("CHROMADB_HOST", chroma_host)
                 monkeypatch.setenv("CHROMADB_PORT", str(chroma_port))
-                monkeypatch.setenv("EMBEDDING_PROVIDER", "ollama")
+                # Use OpenAI for both embeddings and LLM so the full pipeline
+                # works without Ollama, and retrieval vectors actually match.
+                monkeypatch.setenv("EMBEDDING_PROVIDER", "openai")
+                monkeypatch.setenv("LLM_PROVIDER", "openai")
 
                 get_settings.cache_clear()
                 _get_engine.cache_clear()
@@ -77,6 +79,7 @@ class TestRagQuality:
         from app.chat.graph import graph
         from app.knowledge.schemas import CollectionCreate
         from app.knowledge.service import create_collection, ingest_document
+        from app.shared.config import get_settings
         from app.shared.database import _get_session_factory
 
         if not TESTSET_PATH.exists():
@@ -89,50 +92,39 @@ class TestRagQuality:
         if not testset:
             pytest.skip("testset.json is empty.")
 
-        # Use deterministic fake embeddings so we don't need Ollama running.
-        # The reranker still scores chunks via cross-encoder (CPU), which is fine.
-        mock_embeddings = MagicMock()
-        mock_embeddings.embed_documents = MagicMock(
-            side_effect=lambda texts: [[0.1] * 384 for _ in texts]
-        )
-        mock_embeddings.embed_query = MagicMock(return_value=[0.1] * 384)
+        settings = get_settings()
+        api_key = settings.openai_api_key or None  # falls back to OPENAI_API_KEY env var if empty
 
         async with _get_session_factory()() as db:
             collection = await create_collection(db, CollectionCreate(name="eval-col"))
 
         doc_bytes = SAMPLE_DOC.read_bytes()
 
-        with patch("app.knowledge.service.get_embeddings", return_value=mock_embeddings):
-            async with _get_session_factory()() as db:
-                await ingest_document(db, collection.id, doc_bytes, "knowledge.txt")
+        async with _get_session_factory()() as db:
+            await ingest_document(db, collection.id, doc_bytes, "knowledge.txt")
 
         samples = []
-        with patch("app.chat.graph.get_embeddings", return_value=mock_embeddings):
-            for item in testset:
-                question = item["user_input"]
-                initial_state = {
-                    "collection_id": str(collection.id),
-                    "conversation_id": str(uuid.uuid4()),
-                    "user_message": question,
-                    "rewritten_query": "",
-                    "retrieved_chunks": [],
-                    "reranked_chunks": [],
-                    "messages": [],
-                    "answer": "",
-                    "early_exit": False,
-                }
-                final_state = await graph.ainvoke(initial_state)
-                samples.append(
-                    SingleTurnSample(
-                        user_input=question,
-                        response=final_state["answer"],
-                        retrieved_contexts=final_state["reranked_chunks"] or [""],
-                    )
+        for item in testset:
+            question = item["user_input"]
+            initial_state = {
+                "collection_id": str(collection.id),
+                "conversation_id": str(uuid.uuid4()),
+                "user_message": question,
+                "rewritten_query": "",
+                "retrieved_chunks": [],
+                "reranked_chunks": [],
+                "messages": [],
+                "answer": "",
+                "early_exit": False,
+            }
+            final_state = await graph.ainvoke(initial_state)
+            samples.append(
+                SingleTurnSample(
+                    user_input=question,
+                    response=final_state["answer"],
+                    retrieved_contexts=final_state["reranked_chunks"] or [""],
                 )
-
-        from app.shared.config import get_settings
-        settings = get_settings()
-        api_key = settings.openai_api_key or None  # falls back to OPENAI_API_KEY env var if empty
+            )
 
         judge_llm = llm_factory("gpt-4o-mini", client=OpenAI(api_key=api_key))
         judge_embeddings = OpenAIEmbeddings(client=AsyncOpenAI(api_key=api_key))
