@@ -30,7 +30,7 @@ Built with: LangChain · LangGraph · ChromaDB · FastAPI · React · PostgreSQL
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/yourusername/personal-knowledge-base.git
+git clone https://github.com/MarcinuB/personal-knowledge-base.git
 cd personal-knowledge-base
 
 # 2. Copy and edit environment variables
