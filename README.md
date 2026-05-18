@@ -83,6 +83,14 @@ Then restart: `docker compose up`
 
 ## Running Tests
 
+### Test markers
+
+| Marker | What it tests | Dependencies |
+|--------|--------------|--------------|
+| `unit` | Pure logic, no I/O — fast, no external services | None |
+| `integration` | Full ingestion + retrieval flow | Docker (testcontainers spins up Postgres + ChromaDB automatically) |
+| `eval` | RAGAS quality scores (faithfulness, answer relevancy) | Docker + `OPENAI_API_KEY` |
+
 ### Option A — local venv (recommended for development)
 
 Faster iteration: no container spin-up, instant feedback on unit tests.
@@ -97,7 +105,7 @@ pip install -e ".[dev]"
 Then run tests:
 
 ```bash
-# All unit tests
+# All unit tests (no Docker needed)
 pytest app -m unit
 
 # Single file
@@ -106,9 +114,11 @@ pytest app/shared/tests/test_config.py -v
 # Single class or test
 pytest app/shared/tests/test_config.py::TestSettingsDefaults -v
 
-# Integration tests — start dependencies first
-docker compose up -d postgres chromadb
+# Integration tests (testcontainers starts Postgres + ChromaDB automatically)
 pytest app -m integration
+
+# RAGAS eval tests — run manually or nightly, not on every PR
+OPENAI_API_KEY=sk-... pytest evals -m eval -v -s
 ```
 
 ### Option B — Docker (useful for CI or a clean environment check)
@@ -128,6 +138,16 @@ docker compose run --rm backend pytest app -m integration
 # E2E tests (requires full stack running)
 docker compose up -d
 docker compose run --rm backend pytest tests -m e2e
+```
+
+### Generating the RAGAS testset
+
+The eval testset (`backend/evals/testset.json`) is committed to the repo and used as-is by the eval tests. To regenerate it (e.g. after updating the sample document):
+
+```bash
+cd backend
+OPENAI_API_KEY=sk-... python -m evals.generate_testset
+# Review evals/testset.json, remove any poor-quality questions, then commit
 ```
 
 ---
