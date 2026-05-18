@@ -71,12 +71,16 @@ class TestRagQuality:
                 chromadb_module._client = None
 
     async def test_faithfulness_and_answer_relevancy(self):
-        from openai import AsyncOpenAI, OpenAI
+        from langchain_openai import ChatOpenAI
+        from langchain_openai import OpenAIEmbeddings as LCOpenAIEmbeddings
 
         from ragas import EvaluationDataset, SingleTurnSample, evaluate
-        from ragas.embeddings import OpenAIEmbeddings
-        from ragas.llms import llm_factory
-        from ragas.metrics.collections import AnswerRelevancy, Faithfulness
+        from ragas.embeddings import LangchainEmbeddingsWrapper
+        from ragas.llms import LangchainLLMWrapper
+        # Use private old-style metrics: ragas.metrics.collections (new API) is not yet
+        # compatible with evaluate() which checks isinstance(m, Metric) against the old base.
+        from ragas.metrics._answer_relevance import AnswerRelevancy
+        from ragas.metrics._faithfulness import Faithfulness
 
         from app.chat.graph import graph
         from app.knowledge.schemas import CollectionCreate
@@ -128,16 +132,15 @@ class TestRagQuality:
                 )
             )
 
-        judge_llm = llm_factory("gpt-4o-mini", client=OpenAI(api_key=api_key))
-        judge_embeddings = OpenAIEmbeddings(client=AsyncOpenAI(api_key=api_key))
+        judge_llm = LangchainLLMWrapper(ChatOpenAI(model="gpt-4o-mini", api_key=api_key))
+        judge_embeddings = LangchainEmbeddingsWrapper(LCOpenAIEmbeddings(api_key=api_key))
 
         dataset = EvaluationDataset(samples=samples)
         results = evaluate(
             dataset=dataset,
-            metrics=[
-                Faithfulness(llm=judge_llm),
-                AnswerRelevancy(llm=judge_llm, embeddings=judge_embeddings),
-            ],
+            metrics=[Faithfulness(), AnswerRelevancy()],
+            llm=judge_llm,
+            embeddings=judge_embeddings,
         )
 
         print("\n=== RAGAS Scores ===")
