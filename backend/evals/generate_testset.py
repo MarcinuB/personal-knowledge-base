@@ -12,7 +12,7 @@ entries before committing testset.json.
 import json
 from pathlib import Path
 
-from openai import OpenAI
+from openai import AsyncOpenAI, OpenAI
 
 from langchain_community.document_loaders import TextLoader
 from ragas.embeddings import OpenAIEmbeddings
@@ -34,9 +34,10 @@ def main() -> None:
 
     docs = TextLoader(str(SAMPLE_DOC)).load()
 
-    client = OpenAI(api_key=api_key)
-    llm = llm_factory("gpt-4o-mini", client=client)
-    embeddings = OpenAIEmbeddings(client=client)
+    # AsyncOpenAI enables ragas to use aembed_text() in its async pipeline,
+    # avoiding the "sync embedding in async context" performance warning.
+    llm = llm_factory("gpt-4o-mini", client=OpenAI(api_key=api_key))
+    embeddings = OpenAIEmbeddings(client=AsyncOpenAI(api_key=api_key))
 
     generator = TestsetGenerator(llm=llm, embedding_model=embeddings)
     testset = generator.generate_with_langchain_docs(docs, testset_size=TESTSET_SIZE)
