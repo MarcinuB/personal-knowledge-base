@@ -1,6 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,7 +9,10 @@ class Settings(BaseSettings):
     # LLM
     llm_provider: Literal["ollama", "openai"] = "ollama"
     ollama_base_url: str = "http://ollama:11434"
-    ollama_model: str = "llama3"
+    llm_model: str = Field(
+        default="llama3",
+        validation_alias=AliasChoices("llm_model", "ollama_model"),
+    )
     openai_api_key: str = ""
 
     # Embeddings

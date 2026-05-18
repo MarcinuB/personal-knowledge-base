@@ -10,7 +10,7 @@ class TestSettingsDefaults:
         s = Settings()
         assert s.llm_provider == "ollama"
         assert s.ollama_base_url == "http://ollama:11434"
-        assert s.ollama_model == "llama3"
+        assert s.llm_model == "llama3"
 
     def test_embedding_defaults(self):
         s = Settings()
@@ -34,10 +34,15 @@ class TestSettingsEnvOverrides:
         s = Settings()
         assert s.llm_provider == "openai"
 
-    def test_ollama_model_override(self, monkeypatch):
+    def test_llm_model_override(self, monkeypatch):
+        monkeypatch.setenv("LLM_MODEL", "mistral")
+        s = Settings()
+        assert s.llm_model == "mistral"
+
+    def test_llm_model_legacy_ollama_model_env(self, monkeypatch):
         monkeypatch.setenv("OLLAMA_MODEL", "mistral")
         s = Settings()
-        assert s.ollama_model == "mistral"
+        assert s.llm_model == "mistral"
 
     def test_openai_api_key_override(self, monkeypatch):
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test-123")

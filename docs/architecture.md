@@ -116,7 +116,7 @@ The system supports two LLM providers, switchable via environment variables:
 | Env Var | Default | Options |
 |---|---|---|
 | `LLM_PROVIDER` | `ollama` | `ollama`, `openai` |
-| `OLLAMA_MODEL` | `llama3` | any model pulled in Ollama |
+| `LLM_MODEL` | `llama3` | model name for the active LLM provider (`OLLAMA_MODEL` accepted as alias) |
 | `EMBEDDING_PROVIDER` | `ollama` | `ollama`, `openai` |
 | `EMBEDDING_MODEL` | `nomic-embed-text` | any embedding model |
 | `OPENAI_API_KEY` | `` | required if provider is `openai` |
